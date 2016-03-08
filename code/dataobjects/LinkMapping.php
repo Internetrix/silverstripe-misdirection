@@ -18,6 +18,7 @@ class LinkMapping extends DataObject {
 		'Priority' => 'Int',
 		'RedirectType' => "Enum('Link, Page', 'Link')",
 		'RedirectLink' => 'Varchar(255)',
+		'CaseSensitiveRedirectLink' => 'Boolean',
 		'RedirectPageID' => 'Int',
 		'ResponseCode' => 'Int',
 		'ForwardPOSTRequest' => 'Boolean',
@@ -140,6 +141,7 @@ class LinkMapping extends DataObject {
 		$fields->removeByName('Priority');
 		$fields->removeByName('RedirectType');
 		$fields->removeByName('RedirectLink');
+		$fields->removeByName('CaseSensitiveRedirectLink');
 		$fields->removeByName('RedirectPageID');
 		$fields->removeByName('ResponseCode');
 		$fields->removeByName('ForwardPOSTRequest');
@@ -195,6 +197,7 @@ class LinkMapping extends DataObject {
 			'RedirectLink',
 			''
 		)->setRightTitle('This requires the <strong>HTTP/S</strong> scheme for an external URL'));
+		$redirect->push(CheckboxField::create('CaseSensitiveRedirectLink', 'Case sensitive link?'));
 
 		// Allow redirect page configuration when the CMS module is present.
 
@@ -308,7 +311,9 @@ class LinkMapping extends DataObject {
 
 		parent::onBeforeWrite();
 		$this->MappedLink = MisdirectionService::unify_URL($this->MappedLink);
-		$this->RedirectLink = MisdirectionService::unify_URL($this->RedirectLink);
+		if(!$this->CaseSensitiveRedirectLink){
+			$this->RedirectLink = MisdirectionService::unify_URL($this->RedirectLink);
+		}
 		$this->HostnameRestriction = MisdirectionService::unify_URL($this->HostnameRestriction);
 	}
 
