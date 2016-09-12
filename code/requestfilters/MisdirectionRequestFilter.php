@@ -40,10 +40,16 @@ class MisdirectionRequestFilter implements RequestFilter {
 
 	public function postRequest(SS_HTTPRequest $request, SS_HTTPResponse $response, DataModel $model) {
 
-		// Bypass the request filter when requesting specific director rules such as "/admin" or "/dev".
+		// Bypass the request filter when requesting specific director rules such as "/admin".
 
-		$requestURL = $request->getURL();
 		$configuration = Config::inst();
+		$requestURL = $request->getURL();
+		$bypass = array(
+			'admin',
+			'Security',
+			'CMSSecurity',
+			'dev'
+		);
 		foreach($configuration->get('Director', 'rules') as $segment => $controller) {
 
 			// Retrieve the specific director rules.
@@ -54,7 +60,7 @@ class MisdirectionRequestFilter implements RequestFilter {
 
 			// Determine if the current request matches a specific director rule.
 
-			if($segment && (strpos($requestURL, $segment) === 0)) {
+			if($segment && in_array($segment, $bypass) && (($requestURL === $segment) || (strpos($requestURL, "{$segment}/") === 0))) {
 
 				// Continue processing the response.
 
@@ -77,7 +83,7 @@ class MisdirectionRequestFilter implements RequestFilter {
 		$success = (($status >= 200) && ($status < 300));
 		$error = ($status === 404);
 
-		// Either hook into a page not found, or when enforced, replace the default automated URL handling.
+		// Determine whether we're either hooking into a page not found or replacing the default automated URL handling.
 
 		$enforce = $configuration->get('MisdirectionRequestFilter', 'enforce_misdirection');
 		$replace = $configuration->get('MisdirectionRequestFilter', 'replace_default');
@@ -96,9 +102,18 @@ class MisdirectionRequestFilter implements RequestFilter {
 				$responseCode = 307;
 			}
 
+			// Determine the home page URL when replacing the default automated URL handling.
+
+			$link = $map->getLink();
+			$base = Director::baseURL();
+			if($replace && (substr($link, 0, strlen($base)) === $base) && (substr($link, strlen($base)) === 'home/')) {
+				$link = $base;
+			}
+
 			// Update the response using the link mapping redirection.
-            $response->setBody('');
-			$response->redirect($map->getLink(), $responseCode);
+
+			$response->setBody('');
+			$response->redirect($link, $responseCode);
 		}
 
 		// Determine a page not found fallback, when the CMS module is present.
@@ -113,7 +128,8 @@ class MisdirectionRequestFilter implements RequestFilter {
 			}
 
 			// Update the response using the fallback, enforcing no further redirection.
-            $response->setBody('');
+
+			$response->setBody('');
 			$response->redirect($fallback['link'], $responseCode);
 		}
 

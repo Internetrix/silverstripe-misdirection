@@ -16,7 +16,7 @@ class MisdirectionService {
 
 	public static function unify_URL($URL) {
 
-		return strtolower(trim($URL, '/?'));
+		return strtolower(trim($URL, ' ?/'));
 	}
 
 	/**
@@ -68,7 +68,6 @@ class MisdirectionService {
 
 		$URL = self::is_external_URL($URL) ? parse_url($URL, PHP_URL_PATH) : Director::makeRelative($URL);
 		$parts = explode('?', self::unify_URL($URL));
-		$base = Convert::raw2sql($parts[0]);
 
 		// Instantiate the link mapping query.
 
@@ -79,12 +78,17 @@ class MisdirectionService {
 		if(is_null($host) && ($controller = Controller::curr())) {
 			$host = $controller->getRequest()->getHeader('Host');
 		}
-		$matches = $matches->where("(HostnameRestriction IS NULL) OR (HostnameRestriction = '" . Convert::raw2sql($host) . "')");
+		$temporary = $host;
+		$host = Convert::raw2sql($host);
+		$matches = $matches->where("(HostnameRestriction IS NULL) OR (HostnameRestriction = '{$host}')");
 		$regex = clone $matches;
 
 		// Determine the simple matching from the database.
 
+		$base = Convert::raw2sql($parts[0]);
 		$matches = $matches->where("(LinkType = 'Simple') AND (((IncludesHostname = 0) AND ((MappedLink = '{$base}') OR (MappedLink LIKE '{$base}?%'))) OR ((IncludesHostname = 1) AND ((MappedLink = '{$host}/{$base}') OR (MappedLink LIKE '{$host}/{$base}?%'))))");
+		$host = $temporary;
+		$base = $parts[0];
 
 		// Determine the remaining regular expression matching, as this is inconsistent from the database.
 
@@ -136,7 +140,7 @@ class MisdirectionService {
 
 					// Return the first link mapping when GET parameters aren't present.
 
-					$match->setMatchedURL($match->IncludesHostname ? "{$host}/{$parts[0]}" : $parts[0]);
+					$match->setMatchedURL($match->IncludesHostname ? "{$host}/{$base}" : $base);
 					return $match;
 				}
 			}
@@ -233,6 +237,10 @@ class MisdirectionService {
 			$toURL = null;
 			$responseCode = 303;
 
+			// This prevents a page not found from redirecting back to the same page.
+
+			array_pop($segments);
+
 			// Retrieve the default site configuration fallback.
 
 			$config = SiteConfig::current_site_config();
@@ -249,7 +257,6 @@ class MisdirectionService {
 
 			// Determine the page specific fallback.
 
-			$apply = false;
 			for($iteration = 0; $iteration < count($segments); $iteration++) {
 				$page = SiteTree::get()->filter(array(
 					'URLSegment' => $segments[$iteration],
@@ -276,29 +283,34 @@ class MisdirectionService {
 
 					// The bottom of the chain has been reached.
 
-					$apply = true;
 					break;
 				}
 			}
 
 			// Determine the applicable fallback.
 
-			if($apply && $applicableRule) {
+			if($applicableRule) {
 				$link = null;
 				switch($applicableRule) {
+
+					// Bypass the request filter.
+
 					case 'Nearest':
-						$link = $nearestParent;
+						$link = '/' . HTTP::setGetVar('misdirected', true, $nearestParent);
 						break;
 					case 'This':
-						$link = $thisPage;
+						$link = '/' . HTTP::setGetVar('misdirected', true, $thisPage);
 						break;
 					case 'URL':
-						$link = $toURL;
+
+						// When appropriate, prepend the base URL to match a page redirection.
+
+						$link = self::is_external_URL($toURL) ? (ClassInfo::exists('Multisites') ? HTTP::setGetVar('misdirected', true, $toURL) : $toURL) : ('/' . HTTP::setGetVar('misdirected', true, Controller::join_links(Director::baseURL(), $toURL)));
 						break;
 				}
 				if($link) {
 					return array(
-						'link' => self::is_external_URL($link) ? $link : Controller::join_links(Director::baseURL(), HTTP::setGetVar('misdirected', true, $link)),
+						'link' => $link,
 						'code' => (int)$responseCode
 					);
 				}

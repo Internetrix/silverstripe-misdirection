@@ -71,7 +71,12 @@ class MisdirectionHistoricalLinkMappingsTask extends BuildTask {
 
 	protected function getPublishedVersionRecords() {
 
-		$query = new SQLQuery('ID, RecordID, ParentID, URLSegment, Version', 'SiteTree_versions', 'WasPublished = 1', 'ID ASC');
+		$query = new SQLSelect(
+			'ID, RecordID, ParentID, URLSegment, Version',
+			'SiteTree_versions',
+			'WasPublished = 1',
+			'ID ASC'
+		);
 		return $query->execute();
 	}
 
@@ -126,7 +131,14 @@ class MisdirectionHistoricalLinkMappingsTask extends BuildTask {
 	protected function addMappingToList($URL, $ID) {
 
 		$this->linkMappings[$URL] = $ID;
-		DB::query("UPDATE {$this->replayTable} SET FullURL = '{$URL}' WHERE ID = {$ID};");
+		$query = new SQLUpdate(
+			$this->replayTable,
+			array(
+				'FullURL' => $URL
+			),
+			"ID = {$ID}"
+		);
+		$query->execute();
 	}
 
 	protected function addRecord($record) {
@@ -135,8 +147,13 @@ class MisdirectionHistoricalLinkMappingsTask extends BuildTask {
 
 			// This is only used retain the latest version of the record.
 
-			$sql = "REPLACE INTO {$this->replayTable}({$this->replaceColumnString}) VALUES('{$record['RecordID']}', '{$record['ID']}', '{$record['ParentID']}', '" . Convert::raw2sql($record['URLSegment']) . "', '{$record['Version']}');";
-			DB::query($sql);
+			DB::prepared_query("REPLACE INTO {$this->replayTable}({$this->replaceColumnString}) VALUES(?, ?, ?, ?, ?);", array(
+				$record['RecordID'],
+				$record['ID'],
+				$record['ParentID'],
+				$record['URLSegment'],
+				$record['Version']
+			));
 		}
 	}
 
@@ -164,7 +181,11 @@ class MisdirectionHistoricalLinkMappingsTask extends BuildTask {
 
 	protected function getReplayRecordByID($ID) {
 
-		$query = new SQLQuery('*', $this->replayTable, "ID = {$ID}");
+		$query = new SQLSelect(
+			'*',
+			$this->replayTable,
+			"ID = {$ID}"
+		);
 		$records = $query->execute();
 		return $records->first();
 	}
@@ -178,7 +199,11 @@ class MisdirectionHistoricalLinkMappingsTask extends BuildTask {
 
 	protected function getChildren($ID) {
 
-		$query = new SQLQuery('*', $this->replayTable, 'ParentID = ' . (int)$ID);
+		$query = new SQLSelect(
+			'*',
+			$this->replayTable,
+			'ParentID = ' . (int)$ID
+		);
 		return $query->execute();
 	}
 
@@ -208,7 +233,15 @@ class MisdirectionHistoricalLinkMappingsTask extends BuildTask {
 
 			// Retrieve the parent element which was most recently published.
 
-			$parentQuery = new SQLQuery('ID, ParentID, URLSegment, Version', $this->replayTable, "ID = {$parentID}", null, null, null, 1);
+			$parentQuery = new SQLSelect(
+				'ID, ParentID, URLSegment, Version',
+				$this->replayTable,
+				"ID = {$parentID}",
+				null,
+				null,
+				null,
+				1
+			);
 			$parent = $parentQuery->execute()->first();
 			return $this->getURLForRecord($parent, $URL);
 		}
@@ -229,7 +262,11 @@ class MisdirectionHistoricalLinkMappingsTask extends BuildTask {
 
 				// Check that the URL is not the current live URL.
 
-				$query = new SQLQuery('ID', $this->replayTable, "FullURL = '{$URL}'");
+				$query = new SQLSelect(
+					'ID',
+					$this->replayTable,
+					"FullURL = '{$URL}'"
+				);
 				if($query->count('ID') == 0) {
 					echo "<div>{$siteTreeID} - {$URL}</div><br>";
 					if($this->live) {
@@ -246,25 +283,26 @@ class MisdirectionHistoricalLinkMappingsTask extends BuildTask {
 
 	protected function setupStructure() {
 
-		if(!(DB::getConn() instanceof MySQLDatabase)) {
+		if(!(DB::get_conn() instanceof MySQLDatabase)) {
 			exit('This task currently only supports <strong>MySQL</strong>...');
 		}
 		$replaceArray = self::$db_columns;
 		unset($replaceArray['FullURL']);
 		$this->replaceColumnString = implode(',', array_keys($replaceArray));
-		$tableList = DB::tableList();
+		$tableList = DB::table_list();
 		if(self::$use_temporary_table || !in_array(self::$default_table, $tableList)) {
 			$options = self::$use_temporary_table ? array(
 				'temporary' => true
 			) : null;
-			$this->replayTable = DB::createTable(self::$default_table, self::$db_columns, null, $options);
+			$this->replayTable = DB::create_table(self::$default_table, self::$db_columns, null, $options);
 		}
 		else {
 
 			// Delete all records from the table.
 
-			$query = new SQLQuery('', self::$default_table);
-			$query->setDelete(true);
+			$query = new SQLDelete(
+				self::$default_table
+			);
 			$query->execute();
 		}
 	}
